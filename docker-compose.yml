@@ -1,0 +1,66 @@
+services:
+  mysql:
+    image: bimdevops/mysql:8.0.36
+    container_name: wso2-mysql
+    ports:
+      - "3306:3306"
+    environment:
+      MYSQL_ROOT_PASSWORD: root
+    volumes:
+      - ./mysql/scripts:/docker-entrypoint-initdb.d
+      - ./mysql/conf/my.cnf:/etc/mysql/mysql.conf.d/my.cnf
+    healthcheck:
+      test:
+        ["CMD-SHELL", "mysqladmin ping -h 127.0.0.1 -u root -proot || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 40s
+    networks:
+      - wso2-network
+
+  wso2apim:
+    build: ./apim
+    container_name: wso2apim
+    depends_on:
+      mysql:
+        condition: service_healthy
+    ports:
+      - "9443:9443"
+      - "8280:8280"
+      - "8243:8243"
+    volumes:
+      - ./apim/repository/conf/deployment.toml:/home/wso2carbon/wso2am-4.6.0/repository/conf/deployment.toml
+      - ./apim/repository/resources/security/client-truststore.jks:/home/wso2carbon/wso2am-4.6.0/repository/resources/security/client-truststore.jks
+      - log_volume:/home/wso2carbon/wso2am-4.6.0/repository/logs
+    healthcheck:
+      test: ["CMD", "nc", "-z", "localhost", "9443"]
+      interval: 15s
+      timeout: 5s
+      retries: 20
+      start_period: 180s
+    networks:
+      - wso2-network
+
+  nginx:
+    image: bimdevops/nginx:alpine
+    container_name: wso2-nginx
+    depends_on:
+      - wso2apim
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./nginx/conf.d:/etc/nginx/conf.d
+      - ./nginx/ssl:/etc/nginx/ssl
+    networks:
+      wso2-network:
+        aliases:
+          - am-uat.example.com
+
+networks:
+  wso2-network:
+    driver: bridge
+
+volumes:
+  log_volume:
